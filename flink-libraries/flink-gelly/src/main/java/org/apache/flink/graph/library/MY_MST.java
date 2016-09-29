@@ -132,7 +132,7 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
             if (MSTGraph == null) {
                 MSTGraph = Graph.fromDataSet(graphWork.getVertices(), MinEdgeTuples, env);
             } else {
-                MSTGraph = MSTGraph.union(Graph.fromDataSet(graphWork.getVertices(), MinEdgeTuples, env));//.mapEdges(new IDMapper());
+                MSTGraph = MSTGraph.union(Graph.fromDataSet(graphWork.getVertices(), MinEdgeTuples, env));
             }
 
             /**
@@ -246,44 +246,6 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
             }
             if (minEdge!= null)
                 out.collect(minEdge);
-        }
-    }
-
-    /**
-     * For given vertex find edge with min(VV) and change VV type from </Summarization.EdgeValue</Tuple3>>
-     * to </Tuple3>.
-     * If vertex has multiple edges with the same min(VV), output edge with min(OriginalTargetSource)
-     * This allows for graphs with not necessarily distinct edge weights
-     */
-
-    private static final class SelectMinWeight2
-            implements EdgesFunction<Long,Summarization.EdgeValue<Tuple3<Double,Long,Long>>,
-            Edge<Long, Tuple3<Double,Long,Long>>> {
-
-        public void iterateEdges(Iterable<Tuple2<Long, Edge<Long,
-                Summarization.EdgeValue<Tuple3<Double,Long,Long>>>>> edges,
-                                 Collector<Edge<Long, Tuple3<Double,Long,Long>>> out) throws Exception
-        {
-            Double minVal = Double.MAX_VALUE;
-            Edge<Long,Summarization.EdgeValue<Tuple3<Double,Long,Long>>> minEdge = null;
-            Edge<Long,Tuple3<Double,Long,Long>> outEdge= new Edge();
-            for (Tuple2<Long, Edge<Long, Summarization.EdgeValue<Tuple3<Double,Long,Long>>>> tuple : edges)
-            {
-                if (tuple.f1.getValue().f0.f0 < minVal)
-                {
-                    minVal = tuple.f1.getValue().f0.f0;
-                    minEdge = tuple.f1;
-                }
-                else if (tuple.f1.getValue().f0.f0 == minVal && tuple.f1.getValue().f0.f2<minEdge.getValue().f0.f2){
-                    minEdge=tuple.f1;
-                }
-            }
-            if (minEdge!= null) {
-                outEdge.setSource(minEdge.getSource());
-                outEdge.setTarget(minEdge.getTarget());
-                outEdge.setValue(minEdge.getValue().f0);
-                out.collect(outEdge);
-            }
         }
     }
 
