@@ -22,11 +22,13 @@ import org.apache.flink.api.common.ProgramDescription;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.FlatJoinFunction;
 import org.apache.flink.api.common.functions.JoinFunction;
+import org.apache.flink.api.common.typeutils.base.DoubleComparator;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.functions.FunctionAnnotation;
 import org.apache.flink.api.java.io.LocalCollectionOutputFormat;
 import org.apache.flink.api.java.operators.DeltaIteration;
+import org.apache.flink.api.common.functions.CrossFunction;
 import org.apache.flink.api.java.tuple.Tuple4;
 import org.apache.flink.api.java.tuple.Tuple5;
 import org.apache.flink.api.java.tuple.Tuple6;
@@ -43,8 +45,10 @@ import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.util.Collector;
 import java.util.ArrayList;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Stack;
+import java.lang.Math;
 import org.apache.flink.graph.EdgesFunctionWithVertexValue;
 import java.io.FileWriter;
 import org.apache.flink.api.common.functions.MapFunction;
@@ -53,13 +57,166 @@ import org.apache.flink.api.common.functions.MapFunction;
  * Created by Olga on 9/26/16.
  */
 
-//Christofides' algorithm for the TSP
-//2-approximation algorithm: it returns a cycle that is at most twice as long
-//as an optimal cycle: C ≤ 2 · OPT
+/**
+ * Christofides' algorithm for the TSP
+ * 2-approximation algorithm: it returns a cycle that is at most twice as long
+ * as an optimal cycle: C ≤ 2 · OPT
+*/
 
 public class My_TSPExample implements ProgramDescription{
 
-    private static List<Tuple2<Long,Long>> TSPApx (List<Edge<Long,Double>> edges, int n)
+    @SuppressWarnings("serial")
+    public static void main(String [] args) throws Exception {
+
+        if(!parseParameters(args)) {
+            return;
+        }
+
+        ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
+
+        //get coordinates of vertices on plane
+        DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
+
+        //get Edges from coordinates
+        DataSet<Edge<Long, Double>> edges = vertCoord.cross(vertCoord)
+                        .with(new EuclideanDistComputer())
+                        .filter(new FilterFunction<Edge<Long, Double>>() {
+                            @Override
+                            public boolean filter(Edge<Long, Double> value) throws Exception {
+                                return (value.getSource()!=value.getTarget());
+                            }
+                        })
+                ;
+
+        Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env);
+
+        // Find MST of the given graph
+        Graph<Long, NullValue, Double> result=graph
+                .run(new MY_MST<Long, NullValue, Double>(maxIterations));
+
+        DataSet<Edge<Long, Double>> outres=result.getUndirected().getEdges().distinct();
+
+        Graph<Long, NullValue, Double> cyclic=Graph.fromDataSet(outres,env);
+
+        //Create a Hamiltonian cycle: Tuple2 < Vertex out, Vertex in >
+        List<Tuple2<Long,Long>> tspList =
+                HamCycle(cyclic.getEdges().collect(), numOfPoints);
+
+        //Collect edges - approximate TSP
+        DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
+
+        DataSet<Tuple3<Long,Long,Double>> mytspPath = tspSet
+                .join(graph.getEdges())
+                    .where(0,1)
+                    .equalTo(0,1)
+                    .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
+                        @Override
+                        public Tuple3<Long, Long, Double> join(Tuple2<Long, Long> first, Edge<Long, Double> second)
+                                throws Exception {
+                            return new Tuple3<Long, Long, Double>(first.f0,first.f1, second.getValue());
+                        }
+                    });
+
+        // emit result
+        if(fileOutput) {
+            mytspPath.writeAsCsv(outputPath, "\n", ",");
+            //cyclic.getEdges().writeAsCsv(outputPath, "\n", ",");
+           // result.getEdges().print();
+            env.execute("Metric TSP solution");
+        } else {
+            System.out.println("TSPpath:");
+            mytspPath.print();
+           // cyclic.getEdges().print();
+        }
+
+    }
+
+    @Override
+    public String getDescription() {
+        return "Minimum Spanning Tree Example";
+    }
+
+    // *************************************************************************
+    // UTIL METHODS
+    // *************************************************************************
+
+    private static boolean fileOutput = false;
+
+    private static String edgeInputPath = null;
+
+    private static String outputPath = null;
+
+    private static Integer maxIterations = MY_MSTDefaultData.MAX_ITERATIONS;
+
+    private static Integer numOfPoints = 9;
+
+    private static boolean parseParameters(String[] args) {
+
+        if (args.length > 0) {
+            if(args.length != 4) {
+                System.err.println("Usage: <input edges path> <output path> <num of points> <num iterations>");
+                return false;
+            }
+
+            fileOutput = true;
+            edgeInputPath = args[0];
+            outputPath = args[1];
+            maxIterations = Integer.parseInt(args[3]);
+            numOfPoints=Integer.parseInt(args[2]);
+        } else {
+            System.out.println("Executing Example with default parameters and built-in default data.");
+            System.out.println("  Provide parameters to read input data from files.");
+            System.out.println("  See the documentation for the correct format of input files.");
+            System.out.println("Usage: <input edges path> <output path> <num of points> " +
+                    " <num iterations>");
+        }
+        return true;
+    }
+
+    private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+        if (fileOutput) {
+            return env.readCsvFile(edgeInputPath)
+                    .fieldDelimiter(" ")
+                    .lineDelimiter("\n")
+                    .types(Long.class, Double.class, Double.class);
+        } else {
+            Object[][] DEFAULT_POINTS = new Object[][] {
+                    new Object[]{1L, 1.0, 1.0},
+                    new Object[]{2L, 3.0, 6.0},
+                    new Object[]{3L, 5.0, 5.0},
+                    new Object[]{4L, 5.0, 1.0},
+                    new Object[]{5L, 6.0, 4.0},
+                    new Object[]{7L, 8.0, 1.0},
+                    new Object[]{8L, 7.0, 1.0},
+                    new Object[]{9L, 3.0, 1.0}
+            };
+            List<Tuple3<Long, Double, Double>> edgeList = new LinkedList<Tuple3<Long, Double, Double>>();
+            for (Object[] edge : DEFAULT_POINTS) {
+                edgeList.add(new Tuple3<Long, Double, Double>((Long) edge[0], (Double) edge[1], (Double) edge[2]));
+            }
+            return env.fromCollection(edgeList);
+        }
+    }
+
+    // CrossFunction computes the Euclidean distance between two Coord objects.
+    private static class EuclideanDistComputer
+            implements CrossFunction<Tuple3<Long, Double, Double>, Tuple3<Long, Double, Double>,
+                Edge<Long, Double>> {
+
+        @Override
+        public Edge<Long, Double> cross(Tuple3<Long, Double, Double> c1, Tuple3<Long, Double, Double> c2) {
+            // compute Euclidean distance of coordinates
+            Double dist = Math.sqrt(Math.pow(c1.f1 - c2.f1, 2) + Math.pow(c1.f2 - c2.f2, 2));
+            return new Edge<Long, Double>(c1.f0, c2.f0, dist);
+        }
+    }
+
+    /*
+     * Walk through all vertices exactly once using MST
+     * Create list of pairs Source-Target
+     * DFS-based method
+     */
+    private static List<Tuple2<Long,Long>> HamCycle (List<Edge<Long,Double>> edges, int n)
     {
         List<List<Long>> adj = new ArrayList<List<Long>>(n+1);
         for (int i=0; i<=n; i++)
@@ -96,181 +253,5 @@ public class My_TSPExample implements ProgramDescription{
         return result;
     }
 
-    @SuppressWarnings("serial")
-    public static void main(String [] args) throws Exception {
-    //public static void main(String [] args) throws Exception {
-
-        if(!parseParameters(args)) {
-            return;
-        }
-
-        ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
-
-        DataSet<Edge<Long, Double>> edges = getEdgeDataSet(env);
-
-        Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env).getUndirected();
-
-        // Find MST of the given graph
-        Graph<Long, NullValue, Double> result=graph
-                .run(new MY_MST<Long, NullValue, Double>(maxIterations));
-
-        //Eulerian graph
-        DataSet<Edge<Long, Double>> outres=result.getUndirected().getEdges().distinct();
-
-        Graph<Long, NullValue, Double> cyclic=Graph.fromDataSet(outres,env);
-
-        //System.out.println("MSTEdges");
-        //result.getEdges().print();
-        //Find an Euler tour?
-
-        List<Tuple2<Long,Long>> tspList =
-        TSPApx(cyclic.getEdges().collect(), (int)graph.getVertices().count());
-
-        DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
-
-        DataSet<Tuple3<Long,Long,Double>> mytspPath = tspSet
-                .join(graph.getEdges())
-                    .where(0,1)
-                    .equalTo(0,1)
-                    .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
-                        @Override
-                        public Tuple3<Long, Long, Double> join(Tuple2<Long, Long> first, Edge<Long, Double> second)
-                                throws Exception {
-                            return new Tuple3<Long, Long, Double>(first.f0,first.f1, second.getValue());
-                        }
-                    });
-
-        //for a cycle (rather than a path)
-//        if (mytspPath==null) {
-//            mytspPath=graph.getEdges().filter(new SpecificEdgeFilter(prev, root));
-//        }
-//        else {
-//            mytspPath=mytspPath.union(graph.getEdges()
-//                   // .map(new IdMapper<Edge<Long, Double>>())
-//                    .filter(new SpecificEdgeFilter(prev, root)));
-//        }
-
-        // emit result
-        if(fileOutput) {
-            mytspPath.writeAsCsv(outputPath, "\n", ",");
-            //cyclic.getEdges().writeAsCsv(outputPath, "\n", ",");
-           // result.getEdges().print();
-            env.execute("Metric TSP solution");
-        } else {
-            System.out.println("TSPpath:");
-            mytspPath.print();
-           // cyclic.getEdges().print();
-        }
-
-    }
-
-    @Override
-    public String getDescription() {
-        return "Minimum Spanning Tree Example";
-    }
-
-    // *************************************************************************
-    // UTIL METHODS
-    // *************************************************************************
-
-    private static boolean fileOutput = false;
-
-    private static String edgeInputPath = null;
-
-    private static String outputPath = null;
-
-    private static Integer maxIterations = MY_MSTDefaultData.MAX_ITERATIONS;
-
-    private static boolean parseParameters(String[] args) {
-
-        if (args.length > 0) {
-            if(args.length != 3) {
-                System.err.println("Usage: MST  <input edges path> <output path> <num iterations>");
-                return false;
-            }
-
-            fileOutput = true;
-            edgeInputPath = args[0];
-            outputPath = args[1];
-            maxIterations = Integer.parseInt(args[2]);
-        } else {
-            System.out.println("Executing MST with default parameters and built-in default data.");
-            System.out.println("  Provide parameters to read input data from files.");
-            System.out.println("  See the documentation for the correct format of input files.");
-            System.out.println("Usage: MST  <input edges path> <output path>" +
-                    " <num iterations>");
-        }
-        return true;
-    }
-
-    private static DataSet<Edge<Long, Double>> getEdgeDataSet(ExecutionEnvironment env) {
-        if (fileOutput) {
-            return env.readCsvFile(edgeInputPath)
-                    .fieldDelimiter("\t")
-                    .lineDelimiter("\n")
-                    .types(Long.class, Long.class, Double.class)
-                    .map(new Tuple3ToEdgeMap<Long, Double>());
-        } else {
-            return MY_MSTDefaultData.getDefaultEdgeDataSet(env);
-        }
-    }
-
-    //leave only edges that has distinct Source and Target CC
-    @SuppressWarnings("serial")
-    @FunctionAnnotation.ForwardedFields("*->*")
-    private static class OverweightVertices implements FilterFunction<Tuple2<Long, LongValue>> {
-        private LongValue four = new LongValue(4);
-        @Override
-        public boolean filter(Tuple2<Long, LongValue> vertex) throws Exception {
-            return (vertex.f1.compareTo(four)>0);
-        }
-    }
-
-    private static class NeighborsFilter implements FilterFunction<Edge<Long, Double>> {
-        public NeighborsFilter(Long v)
-        {this.v=v;}
-        Long v;
-        @Override
-        public boolean filter(Edge<Long, Double> edge) throws Exception {
-            return (edge.getSource().compareTo(v)==0);
-        }
-    }
-
-    private static class SpecificEdgeFilter implements FilterFunction<Edge<Long, Double>> {
-        public SpecificEdgeFilter(Long s, Long t)
-        {this.s=s; this.t = t;}
-        Long s,t;
-        @Override
-        public boolean filter(Edge<Long, Double> edge) throws Exception {
-            return ((edge.getSource().compareTo(s)==0) && (edge.getTarget().compareTo(t)==0));
-        }
-    }
-
-    @SuppressWarnings("serial")
-    private static final class ReduceOverwEdges implements EdgesFunctionWithVertexValue<Long, Long, Long, Tuple2<Long, Long>> {
-
-        @Override
-        public void iterateEdges(Vertex<Long, Long> v,
-                                 Iterable<Edge<Long, Long>> edges, Collector<Tuple2<Long, Long>> out) throws Exception {
-
-            long weight = Long.MIN_VALUE;
-
-            for (Edge<Long, Long> edge: edges) {
-                if (edge.getValue() > weight) {
-                    weight = edge.getValue();
-                }
-            }
-            out.collect(new Tuple2<>(v.getId(), weight));
-        }
-    }
-
-    @SuppressWarnings("serial")
-    public static class IdMapper<T> implements MapFunction<T, T> {
-
-        @Override
-        public T map(T value) throws Exception {
-            return value;
-        }
-    }
 }
 
