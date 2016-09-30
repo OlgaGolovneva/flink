@@ -75,10 +75,12 @@ public class My_TSPExample implements ProgramDescription{
         ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
         //get coordinates of vertices on plane
-        DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
+      //  DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
 
+        DataSet<Edge<Long, Double>> edges = getEdgeDataSet(env);
         //get Edges from coordinates
-        DataSet<Edge<Long, Double>> edges = vertCoord.cross(vertCoord)
+      /*  DataSet<Edge<Long, Double>> edges =
+                vertCoord.cross(vertCoord)
                         .with(new EuclideanDistComputer())
                         .filter(new FilterFunction<Edge<Long, Double>>() {
                             @Override
@@ -86,7 +88,7 @@ public class My_TSPExample implements ProgramDescription{
                                 return (value.getSource()!=value.getTarget());
                             }
                         })
-                ;
+                ;*/
 
         //System.out.println("CROSSPRODUCT IS DONE");
 
@@ -184,7 +186,7 @@ public class My_TSPExample implements ProgramDescription{
         return true;
     }
 
-    private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+/*    private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
         if (fileOutput) {
             return env.readCsvFile(edgeInputPath)
                     .fieldDelimiter(" ")
@@ -206,6 +208,18 @@ public class My_TSPExample implements ProgramDescription{
                 edgeList.add(new Tuple3<Long, Double, Double>((Long) edge[0], (Double) edge[1], (Double) edge[2]));
             }
             return env.fromCollection(edgeList);
+        }
+    }*/
+
+    private static DataSet<Edge<Long, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+        if (fileOutput) {
+            return env.readCsvFile(edgeInputPath)
+                    .fieldDelimiter("\t")
+                    .lineDelimiter("\n")
+                    .types(Long.class, Long.class, Double.class)
+                    .map(new Tuple3ToEdgeMap<Long, Double>());
+        } else {
+            return MY_MSTDefaultData.getDefaultEdgeDataSet(env);
         }
     }
 
