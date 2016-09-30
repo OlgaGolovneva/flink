@@ -25,6 +25,8 @@ package org.apache.flink.graph.library;
 import org.apache.flink.api.common.functions.FilterFunction;
 import org.apache.flink.api.common.functions.GroupReduceFunction;
 import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.typeinfo.BasicTypeInfo;
+import org.apache.flink.api.common.typeinfo.TypeInformation;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
 import org.apache.flink.api.java.functions.FunctionAnnotation;
@@ -49,8 +51,7 @@ import org.apache.flink.graph.GraphAlgorithm;
  * input graph are treated equivalently: Source -> Target, Source <- Target and Source <-> Target.
  * That is, every directed edge of the input graph is complemented with the reverse directed edge
  * of the same weight (the complementary edges never appear in the output).
-
- * The basic algorithm is described here: http://www.vldb.org/pvldb/vol7/p1047-han.pdf, and works
+ * The basic algorithm is descibed here: http://www.vldb.org/pvldb/vol7/p1047-han.pdf, and works
  * as follows: In the first phase, each vertex finds a minimum weight out-edge. These edges are
  * added to intermediate MST (i.e. MST at current iteration step). In the second phase, vertices
  * perform Summarization algorithm, using information about Connected Components in intermediate
@@ -73,6 +74,9 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
         this.maxIterations2 = maxIterations;
     }
 
+    final TypeInformation<Long> longType = BasicTypeInfo.LONG_TYPE_INFO;
+    final TypeInformation<Double> doubleType = BasicTypeInfo.DOUBLE_TYPE_INFO;
+
     @Override
     public Graph<Long, NullValue, Double> run(Graph<Long, NullValue, Double> graph) throws Exception {
 
@@ -89,7 +93,7 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
          * Each Vertex Value corresponds to its Connected Component
          * Each Edge Value stores its Original Source and Target values, and Edge Value
          * Vertex<VertexID,NullValue> -> Vertex<VertexID,ConComp=(String)VertexID>
-         * Edge<SourceID,TargetID,Double> -> Edge<SourceID,TargetID,<Double,OriginalSourceID,OriginalTargetID>>
+         * Edge<SourceID,TargetID,Double> -> Edge<SourceID,TargetID,<Double,OriginalSourseID,OriginalTargetID>>
          */
         Graph<Long, String, Double> InVertGr=undirectedGraph.mapVertices(new InitializeVert ());
 
@@ -113,7 +117,6 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
 
             numberOfIterations++;
 
-            //System.out.println("ITERATION NUMBER: "+numberOfIterations);
             //This set may later be defined as IterativeDataSet
             DataSet<Edge<Long, Tuple3<Double, Long, Long>>> CurrentEdges = graphWork.getEdges();
 
@@ -156,14 +159,14 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
 
             DataSet<Edge<Long, Tuple3<Double, Long, Long>>> FinalEdges =
                     CompressedGraph.getEdges()
-                    .groupBy(0,1)
-                    .reduceGroup(new SelectMinEdge());
+                            .groupBy(0,1)
+                            .reduceGroup(new SelectMinEdge());
 
 
             DataSet<Vertex<Long, String>> FinalVertices = CompressedGraph.mapVertices(new ExtractVertVal ()).getVertices();
 
             //collect data for the next loop iteration or finish loop execution
-            if (FinalEdges.first(1).count()>0) {
+            if (FinalEdges.count()>0) {
                 graphWork = Graph.fromDataSet(FinalVertices, FinalEdges, env);
             }
             else {
@@ -172,15 +175,13 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
         }
 
 
-        //System.out.println("ITERATIONS ARE FINISHED");
-
         //Final solution
         DataSet<Edge<Long, Double>> MST=Graph.fromDataSet(MSTGraph.getEdges().distinct(),env).getUndirected()
                 .getEdges().distinct();
 
-        //Graph<Long, NullValue, Double> MSTout=Graph.fromDataSet(graph.getVertices(), MST, env).intersect(graph,true);
+        Graph<Long, NullValue, Double> MSTout=Graph.fromDataSet(graph.getVertices(), MST, env).intersect(graph,true);
 
-        return Graph.fromDataSet(graph.getVertices(), MST, env).intersect(graph,true);
+        return MSTout;
     }
 
     // *************************************************************************
@@ -280,12 +281,12 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
      * This allows for graphs with not necessarily distinct edge weights
      */
 
-    private static class SelectMinEdge implements GroupReduceFunction<Edge<Long, Summarization.EdgeValue<Tuple3<Double, Long, Long>>>,
+    public static class SelectMinEdge implements GroupReduceFunction<Edge<Long, Summarization.EdgeValue<Tuple3<Double, Long, Long>>>,
             Edge<Long, Tuple3<Double,Long,Long>>> {
 
         @Override
         public void reduce(Iterable<Edge<Long, Summarization.EdgeValue<Tuple3<Double, Long, Long>>>> edges,
-                Collector<Edge<Long, Tuple3<Double,Long,Long>>> out) throws Exception {
+                           Collector<Edge<Long, Tuple3<Double,Long,Long>>> out) throws Exception {
 
             Double minVal = Double.MAX_VALUE;
             Edge<Long,Summarization.EdgeValue<Tuple3<Double,Long,Long>>> minEdge = null;

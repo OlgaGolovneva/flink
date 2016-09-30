@@ -61,7 +61,7 @@ import org.apache.flink.api.common.functions.MapFunction;
  * Christofides' algorithm for the TSP
  * 2-approximation algorithm: it returns a cycle that is at most twice as long
  * as an optimal cycle: C ≤ 2 · OPT
-*/
+ */
 
 public class My_TSPExample implements ProgramDescription{
 
@@ -75,30 +75,24 @@ public class My_TSPExample implements ProgramDescription{
         ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
         //get coordinates of vertices on plane
-      //  DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
+        DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
 
-        DataSet<Edge<Long, Double>> edges = getEdgeDataSet(env);
         //get Edges from coordinates
-      /*  DataSet<Edge<Long, Double>> edges =
-                vertCoord.cross(vertCoord)
-                        .with(new EuclideanDistComputer())
-                        .filter(new FilterFunction<Edge<Long, Double>>() {
-                            @Override
-                            public boolean filter(Edge<Long, Double> value) throws Exception {
-                                return (value.getSource()!=value.getTarget());
-                            }
-                        })
-                ;*/
-
-        //System.out.println("CROSSPRODUCT IS DONE");
+        DataSet<Edge<Long, Double>> edges = vertCoord.cross(vertCoord)
+                .with(new EuclideanDistComputer())
+                .filter(new FilterFunction<Edge<Long, Double>>() {
+                    @Override
+                    public boolean filter(Edge<Long, Double> value) throws Exception {
+                        return (value.getSource()!=value.getTarget());
+                    }
+                })
+                ;
 
         Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env);
 
         // Find MST of the given graph
         Graph<Long, NullValue, Double> result=graph
                 .run(new MY_MST<Long, NullValue, Double>(maxIterations));
-
-        //System.out.println("MST IS READY");
 
         DataSet<Edge<Long, Double>> outres=result.getUndirected().getEdges().distinct();
 
@@ -108,38 +102,31 @@ public class My_TSPExample implements ProgramDescription{
         List<Tuple2<Long,Long>> tspList =
                 HamCycle(cyclic.getEdges().collect(), numOfPoints);
 
-        //System.out.println("HamCycle IS READY: ");
-
-        for (Tuple2<Long,Long> vert:tspList){
-            System.out.println(vert);
-        }
-
-
         //Collect edges - approximate TSP
         DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
 
         DataSet<Tuple3<Long,Long,Double>> mytspPath = tspSet
-                .join(edges)
-                    .where(0,1)
-                    .equalTo(0,1)
-                    .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
-                        @Override
-                        public Tuple3<Long, Long, Double> join(Tuple2<Long, Long> first, Edge<Long, Double> second)
-                                throws Exception {
-                            return new Tuple3<Long, Long, Double>(first.f0,first.f1, second.getValue());
-                        }
-                    });
+                .join(graph.getEdges())
+                .where(0,1)
+                .equalTo(0,1)
+                .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
+                    @Override
+                    public Tuple3<Long, Long, Double> join(Tuple2<Long, Long> first, Edge<Long, Double> second)
+                            throws Exception {
+                        return new Tuple3<Long, Long, Double>(first.f0,first.f1, second.getValue());
+                    }
+                });
 
         // emit result
         if(fileOutput) {
             mytspPath.writeAsCsv(outputPath, "\n", ",");
             //cyclic.getEdges().writeAsCsv(outputPath, "\n", ",");
-           // result.getEdges().print();
+            // result.getEdges().print();
             env.execute("Metric TSP solution");
         } else {
-            System.out.println("TSP cycle:");
+            System.out.println("TSPpath:");
             mytspPath.print();
-           // cyclic.getEdges().print();
+            // cyclic.getEdges().print();
         }
 
     }
@@ -186,7 +173,7 @@ public class My_TSPExample implements ProgramDescription{
         return true;
     }
 
-/*    private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+    private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
         if (fileOutput) {
             return env.readCsvFile(edgeInputPath)
                     .fieldDelimiter(" ")
@@ -209,24 +196,12 @@ public class My_TSPExample implements ProgramDescription{
             }
             return env.fromCollection(edgeList);
         }
-    }*/
-
-    private static DataSet<Edge<Long, Double>> getEdgeDataSet(ExecutionEnvironment env) {
-        if (fileOutput) {
-            return env.readCsvFile(edgeInputPath)
-                    .fieldDelimiter("\t")
-                    .lineDelimiter("\n")
-                    .types(Long.class, Long.class, Double.class)
-                    .map(new Tuple3ToEdgeMap<Long, Double>());
-        } else {
-            return MY_MSTDefaultData.getDefaultEdgeDataSet(env);
-        }
     }
 
     // CrossFunction computes the Euclidean distance between two Coord objects.
     private static class EuclideanDistComputer
             implements CrossFunction<Tuple3<Long, Double, Double>, Tuple3<Long, Double, Double>,
-                Edge<Long, Double>> {
+            Edge<Long, Double>> {
 
         @Override
         public Edge<Long, Double> cross(Tuple3<Long, Double, Double> c1, Tuple3<Long, Double, Double> c2) {
@@ -279,4 +254,3 @@ public class My_TSPExample implements ProgramDescription{
     }
 
 }
-
