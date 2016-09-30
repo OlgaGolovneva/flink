@@ -88,7 +88,7 @@ public class My_TSPExample implements ProgramDescription{
                         })
                 ;
 
-        System.out.println("CROSSPRODUCT IS DONE");
+        //System.out.println("CROSSPRODUCT IS DONE");
 
         Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env);
 
@@ -96,7 +96,7 @@ public class My_TSPExample implements ProgramDescription{
         Graph<Long, NullValue, Double> result=graph
                 .run(new MY_MST<Long, NullValue, Double>(maxIterations));
 
-        System.out.println("MST IS READY");
+        //System.out.println("MST IS READY");
 
         DataSet<Edge<Long, Double>> outres=result.getUndirected().getEdges().distinct();
 
@@ -106,7 +106,12 @@ public class My_TSPExample implements ProgramDescription{
         List<Tuple2<Long,Long>> tspList =
                 HamCycle(cyclic.getEdges().collect(), numOfPoints);
 
-        System.out.println("HamCycle IS READY");
+        System.out.println("HamCycle IS READY: ");
+
+        for (Tuple2<Long,Long> vert:tspList){
+            System.out.println(vert);
+        }
+
 
         //Collect edges - approximate TSP
         DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
