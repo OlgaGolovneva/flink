@@ -118,6 +118,7 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
 
             numberOfIterations++;
 
+            System.out.println("ITERATION NUMBER: "+numberOfIterations);
             //This set may later be defined as IterativeDataSet
             DataSet<Edge<Long, Tuple3<Double, Long, Long>>> CurrentEdges = graphWork.getEdges();
 
@@ -167,7 +168,7 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
             DataSet<Vertex<Long, String>> FinalVertices = CompressedGraph.mapVertices(new ExtractVertVal ()).getVertices();
 
             //collect data for the next loop iteration or finish loop execution
-            if (FinalEdges.count()>0) {
+            if (FinalEdges.first(1).count()>0) {
                 graphWork = Graph.fromDataSet(FinalVertices, FinalEdges, env);
             }
             else {
@@ -175,6 +176,8 @@ public class MY_MST <K, VV, EV extends Comparable<EV>>
             }
         }
 
+
+        System.out.println("ITERATIONS ARE FINISHED");
 
         //Final solution
         DataSet<Edge<Long, Double>> MST=Graph.fromDataSet(MSTGraph.getEdges().distinct(),env).getUndirected()
