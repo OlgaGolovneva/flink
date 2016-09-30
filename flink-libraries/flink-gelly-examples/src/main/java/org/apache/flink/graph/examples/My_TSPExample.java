@@ -108,7 +108,7 @@ public class My_TSPExample implements ProgramDescription{
         List<Tuple2<Long,Long>> tspList =
                 HamCycle(cyclic.getEdges().collect(), numOfPoints);
 
-        System.out.println("HamCycle IS READY: ");
+        //System.out.println("HamCycle IS READY: ");
 
         for (Tuple2<Long,Long> vert:tspList){
             System.out.println(vert);
@@ -119,7 +119,7 @@ public class My_TSPExample implements ProgramDescription{
         DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
 
         DataSet<Tuple3<Long,Long,Double>> mytspPath = tspSet
-                .join(graph.getEdges())
+                .join(edges)
                     .where(0,1)
                     .equalTo(0,1)
                     .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
