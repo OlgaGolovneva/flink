@@ -75,10 +75,11 @@ public class My_TSPExample implements ProgramDescription{
         ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
         //get coordinates of vertices on plane
-        DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
+        //DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
 
         //get Edges from coordinates
-        DataSet<Edge<Long, Double>> edges = vertCoord.cross(vertCoord)
+        DataSet<Edge<Long, Double>> edges = getEdgeDataSet(env);
+/*                vertCoord.cross(vertCoord)
                 .with(new EuclideanDistComputer())
                 .filter(new FilterFunction<Edge<Long, Double>>() {
                     @Override
@@ -86,12 +87,12 @@ public class My_TSPExample implements ProgramDescription{
                         return (value.getSource()!=value.getTarget());
                     }
                 })
-                ;
+*/                ;
 
-        Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env);
+        //Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env);
 
         // Find MST of the given graph
-        Graph<Long, NullValue, Double> result=graph
+        Graph<Long, NullValue, Double> result=Graph.fromDataSet(edges, env)
                 .run(new MY_MST<Long, NullValue, Double>(maxIterations));
 
         DataSet<Edge<Long, Double>> outres=result.getUndirected().getEdges().distinct();
@@ -106,7 +107,7 @@ public class My_TSPExample implements ProgramDescription{
         DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
 
         DataSet<Tuple3<Long,Long,Double>> mytspPath = tspSet
-                .join(graph.getEdges())
+                .join(edges)
                 .where(0,1)
                 .equalTo(0,1)
                 .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
@@ -173,7 +174,7 @@ public class My_TSPExample implements ProgramDescription{
         return true;
     }
 
-    private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+    /*private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
         if (fileOutput) {
             return env.readCsvFile(edgeInputPath)
                     .fieldDelimiter(" ")
@@ -195,6 +196,18 @@ public class My_TSPExample implements ProgramDescription{
                 edgeList.add(new Tuple3<Long, Double, Double>((Long) edge[0], (Double) edge[1], (Double) edge[2]));
             }
             return env.fromCollection(edgeList);
+        }
+    }*/
+
+    private static DataSet<Edge<Long, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+        if (fileOutput) {
+            return env.readCsvFile(edgeInputPath)
+                    .fieldDelimiter("\t")
+                    .lineDelimiter("\n")
+                    .types(Long.class, Long.class, Double.class)
+                    .map(new Tuple3ToEdgeMap<Long, Double>());
+        } else {
+            return MY_MSTDefaultData.getDefaultEdgeDataSet(env);
         }
     }
 
