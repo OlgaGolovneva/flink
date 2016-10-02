@@ -30,7 +30,6 @@ import org.apache.flink.graph.Graph;
 import org.apache.flink.graph.Vertex;
 import org.apache.flink.graph.examples.data.MY_MSTDefaultData;
 import org.apache.flink.graph.library.MY_MST;
-import org.apache.flink.graph.library.MY_MST2;
 import org.apache.flink.graph.library.MY_MST3;
 import org.apache.flink.graph.utils.Tuple3ToEdgeMap;
 import org.apache.flink.types.NullValue;
