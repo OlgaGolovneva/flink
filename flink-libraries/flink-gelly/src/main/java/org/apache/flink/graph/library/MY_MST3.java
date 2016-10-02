@@ -179,7 +179,7 @@ public class MY_MST3 <K, VV, EV extends Comparable<EV>>
         DataSet<Edge<Short, Float>> MST=Graph.fromDataSet(MSTGraph.getEdges().distinct(),env).getUndirected()
                 .getEdges().distinct();
 
-        Graph<Short, NullValue, Float> MSTout=Graph.fromDataSet(graph.getVertices(), MST, env).intersect(graph,true);
+        Graph<Short, NullValue, Float> MSTout=Graph.fromDataSet(graph.getVertices(), MST, env);
 
         return MSTout;
     }

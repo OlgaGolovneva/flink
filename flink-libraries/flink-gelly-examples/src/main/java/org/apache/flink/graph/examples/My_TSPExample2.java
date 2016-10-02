@@ -95,24 +95,51 @@ public class My_TSPExample2 implements ProgramDescription{
         Graph<Short, NullValue, Float> result=Graph.fromDataSet(edges, env)
                 .run(new MY_MST3<Short, NullValue, Float>(maxIterations));
 
+        List<Edge<Short,Float>> MSTedges=result.getEdges().collect();
+        //env.execute("MST solution");
+
         if(fileOutput) {
             result.getEdges().writeAsCsv(outputPathMST, "\n", ",");
             //cyclic.getEdges().writeAsCsv(outputPath, "\n", ",");
             // result.getEdges().print();
-            env.execute("Metric TSP solution");
+            env.execute("MST is written");
+        }
+        else {
+            result.getEdges().print();
         }
 
-        DataSet<Edge<Short, Float>> outres=result.getUndirected().getEdges().distinct();
+//        DataSet<Edge<Short, Float>> outres=result.getUndirected().getEdges().distinct();
 
-        Graph<Short, NullValue, Float> cyclic=Graph.fromDataSet(outres,env);
+/*        if(fileOutput) {
+            outres.writeAsCsv(outputPathMST, "\n", ",");
+            //cyclic.getEdges().writeAsCsv(outputPath, "\n", ",");
+            // result.getEdges().print();
+            env.execute("Metric TSP solution");
+        }
+        else {
+            result.getEdges().print();
+        }
+*/
+//        Graph<Short, NullValue, Float> cyclic=Graph.fromDataSet(outres,env);
 
         //Create a Hamiltonian cycle: Tuple2 < Vertex out, Vertex in >
         List<Tuple2<Short,Short>> tspList =
-                HamCycle(cyclic.getEdges().collect(), numOfPoints);
+                HamCycle(MSTedges, numOfPoints);
+//                HamCycle(cyclic.getEdges().collect(), numOfPoints);
 
         //Collect edges - approximate TSP
         DataSet<Tuple2<Short,Short>> tspSet = env.fromCollection(tspList);
-
+/*        System.out.print("!!!!!!!!!!!!");
+        System.out.print(tspSet.count());
+        System.out.print("!!!!!!!!!!!!");
+        System.out.print(edges.count());
+        System.out.print("!!!!!!!!!!!!");
+        System.out.print(tspSet
+                .join(edges)
+                .where(0,1)
+                .equalTo(0,1).count());
+        System.out.print("!!!!!!!!!!!!");
+*/
         DataSet<Tuple3<Short,Short,Float>> mytspPath = tspSet
                 .join(edges)
                 .where(0,1)
@@ -217,7 +244,7 @@ public class My_TSPExample2 implements ProgramDescription{
                     .types(Short.class, Short.class, Float.class)
                     .map(new Tuple3ToEdgeMap<Short, Float>());
         } else {
-            return null;
+            return MY_MSTExample3.getDefaultEdgeDataSet(env);
         }
     }
 
