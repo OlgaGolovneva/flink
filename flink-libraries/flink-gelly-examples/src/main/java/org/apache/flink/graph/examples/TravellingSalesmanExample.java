@@ -75,10 +75,10 @@ public class TravellingSalesmanExample implements ProgramDescription{
 
         ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-        DataSet<Edge<Short, Float>> edges = getEdgeDataSet(env);
+        DataSet<Edge<Integer, Float>> edges = getEdgeDataSet(env);
 
         // Find MST of the given graph
-        Graph<Short, NullValue, Float> result=Graph.fromDataSet(edges, env)
+        Graph<Integer, NullValue, Float> result=Graph.fromDataSet(edges, env)
                 .run(new MinimumSpanningTree(maxIterations));
 
         // Output MST
@@ -93,23 +93,23 @@ public class TravellingSalesmanExample implements ProgramDescription{
         }
 
         // List of MST edges
-        List<Edge<Short,Float>> MSTedges=result.getEdges().collect();
+        List<Edge<Integer,Float>> MSTedges=result.getEdges().collect();
 
         // Compute Hamiltonian cycle as a list of edges (pairs of vertices)
-        List<Tuple2<Short,Short>> tspList =
+        List<Tuple2<Integer,Integer>> tspList =
                 HamCycle(MSTedges, numOfPoints);
 
         // Collect edges of Hamiltonian cycle in a DataSet
-        DataSet<Tuple2<Short,Short>> tspSet = env.fromCollection(tspList);
+        DataSet<Tuple2<Integer,Integer>> tspSet = env.fromCollection(tspList);
 
         // Get edge weights from the original graph
-        DataSet<Tuple3<Short,Short,Float>> tspCycle = tspSet
+        DataSet<Tuple3<Integer,Integer,Float>> tspCycle = tspSet
                 .join(edges)
                 .where(0,1)
                 .equalTo(0,1)
-                .with(new JoinFunction<Tuple2<Short, Short>, Edge<Short, Float>, Tuple3<Short, Short, Float>>() {
+                .with(new JoinFunction<Tuple2<Integer, Integer>, Edge<Integer, Float>, Tuple3<Integer, Integer, Float>>() {
                     @Override
-                    public Tuple3<Short, Short, Float> join(Tuple2<Short, Short> first, Edge<Short, Float> second)
+                    public Tuple3<Integer, Integer, Float> join(Tuple2<Integer, Integer> first, Edge<Integer, Float> second)
                             throws Exception {
                         return new Tuple3<>(first.f0,first.f1, second.getValue());
                     }
@@ -173,13 +173,13 @@ public class TravellingSalesmanExample implements ProgramDescription{
         return true;
     }
 
-    private static DataSet<Edge<Short, Float>> getEdgeDataSet(ExecutionEnvironment env) {
+    private static DataSet<Edge<Integer, Float>> getEdgeDataSet(ExecutionEnvironment env) {
         if (fileOutput) {
             return env.readCsvFile(edgeInputPath)
                     .fieldDelimiter("\t")
                     .lineDelimiter("\n")
-                    .types(Short.class, Short.class, Float.class)
-                    .map(new Tuple3ToEdgeMap<Short, Float>());
+                    .types(Integer.class, Integer.class, Float.class)
+                    .map(new Tuple3ToEdgeMap<Integer, Float>());
         } else {
             return TSPDefaultData.getDefaultEdgeDataSet(env);
         }
@@ -192,39 +192,39 @@ public class TravellingSalesmanExample implements ProgramDescription{
      * @param n Number of vertices
      * @return list of pairs of vertices - edges of a Hamiltonian cycle computed from the provided Minimum Spanning Tree
      */
-    private static List<Tuple2<Short,Short>> HamCycle (List<Edge<Short,Float>> edges, int n)
+    private static List<Tuple2<Integer,Integer>> HamCycle (List<Edge<Integer,Float>> edges, int n)
     {
         // Compose adjacency lists of the graph.
-        List<List<Short>> adj = new ArrayList<>(n+1);
+        List<List<Integer>> adj = new ArrayList<>(n+1);
         for (int i=0; i<=n; i++)
-            adj.add(new ArrayList<Short>());
-        for(Edge<Short,Float> edge : edges)
+            adj.add(new ArrayList<Integer>());
+        for(Edge<Integer,Float> edge : edges)
             adj.get(edge.f0.intValue()).add(edge.f1);
 
         // List of edges of Hamiltonian Path
-        List<Tuple2<Short,Short>> result = new ArrayList<>();
+        List<Tuple2<Integer,Integer>> result = new ArrayList<>();
 
         // Arbitrary vertex is selected to be the root
-        Short root = (short)1;
-        Short prev = root;
+        Integer root = 1;
+        Integer prev = root;
 
         // marked[i]=true iff the vertex i has been visited.
         boolean[] marked = new boolean[n+1];
         marked[root.intValue()]=true;
 
         // Depth-First Search
-        Stack<Short> dfs = new Stack<>();
+        Stack<Integer> dfs = new Stack<>();
         dfs.push(root);
 
         while (!dfs.empty())
         {
-            Short curVert = dfs.peek();
+            Integer curVert = dfs.peek();
             dfs.pop();
             if (!curVert.equals(root)) {
                 result.add(new Tuple2<>(prev, curVert));
             }
 
-            for (Short neighbor: adj.get(curVert.intValue()))
+            for (Integer neighbor: adj.get(curVert.intValue()))
             {
                 if (!marked[neighbor.intValue()])
                 {

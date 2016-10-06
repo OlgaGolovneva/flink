@@ -57,12 +57,12 @@ public class TSPDefaultData {
             "3\t1\t4109.913460\n";
 
 
-    public static DataSet<Edge<Short, Float>> getDefaultEdgeDataSet(ExecutionEnvironment env) {
+    public static DataSet<Edge<Integer, Float>> getDefaultEdgeDataSet(ExecutionEnvironment env) {
 
-        List<Edge<Short, Float>> edgeList = new LinkedList<>();
+        List<Edge<Integer, Float>> edgeList = new LinkedList<>();
         for (Object[] edge : DEFAULT_EDGES) {
-            edgeList.add(new Edge<>((Short)edge[0], (Short) edge[1], (Float) edge[2]));
-            edgeList.add(new Edge<>((Short)edge[1], (Short) edge[0], (Float) edge[2]));
+            edgeList.add(new Edge<>((Integer)edge[0], (Integer) edge[1], (Float) edge[2]));
+            edgeList.add(new Edge<>((Integer)edge[1], (Integer) edge[0], (Float) edge[2]));
         }
         return env.fromCollection(edgeList);
     }

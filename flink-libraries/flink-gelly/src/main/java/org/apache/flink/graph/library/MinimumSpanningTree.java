@@ -59,7 +59,7 @@ import org.apache.flink.graph.GraphAlgorithm;
 
 //public class MinimumSpanningTree <K, VV, EV extends Comparable<EV>>
 public class MinimumSpanningTree
-        implements GraphAlgorithm<Short, NullValue, Float, Graph<Short, NullValue, Float>> {
+        implements GraphAlgorithm<Integer, NullValue, Float, Graph<Integer, NullValue, Float>> {
 
     //Maximum number of the while loop iterations
     private final Integer maxIterations;
@@ -74,12 +74,12 @@ public class MinimumSpanningTree
     }
 
     @Override
-    public Graph<Short, NullValue, Float> run(Graph<Short, NullValue, Float> graph) throws Exception {
+    public Graph<Integer, NullValue, Float> run(Graph<Integer, NullValue, Float> graph) throws Exception {
 
         ExecutionEnvironment env = graph.getContext();
 
-        DataSet<Edge<Short, Float>> undirectedGraphEdges = graph.getUndirected().getEdges().distinct();
-        Graph<Short, NullValue, Float> undirectedGraph = Graph.fromDataSet(undirectedGraphEdges,env);
+        DataSet<Edge<Integer, Float>> undirectedGraphEdges = graph.getUndirected().getEdges().distinct();
+        Graph<Integer, NullValue, Float> undirectedGraph = Graph.fromDataSet(undirectedGraphEdges,env);
 
         // Create working graph with </String> Vertex Values - (!) Currently only String values are
         // supported in Summarization method.
@@ -88,13 +88,13 @@ public class MinimumSpanningTree
         // Vertex<VertexID,NullValue> -> Vertex<VertexID,ConComp=(String)VertexID>
         // Edge<SourceID,TargetID,Float> -> Edge<SourceID,TargetID,<Float,OriginalSourceID,OriginalTargetID>>
 
-        Graph<Short, String, Tuple3<Float, Short, Short>> workGraph = undirectedGraph
+        Graph<Integer, String, Tuple3<Float, Integer, Integer>> workGraph = undirectedGraph
                 .mapVertices(new InitializeVert ())
                 .mapEdges(new InitializeEdges ());
 
 
         // This graph will contain current solution, i.e., we will collect MST edges in mstGraph.
-        Graph<Short, String, Float> mstGraph = null;
+        Graph<Integer, String, Float> mstGraph = null;
 
 
          // Iterate while adding new edges and Number of Iterations < maxIterations.
@@ -108,12 +108,12 @@ public class MinimumSpanningTree
             numberOfIterations++;
 
             // This set should later be defined as IterativeDataSet (WHEN nested iterations will be supported in Flink)
-            DataSet<Edge<Short, Tuple3<Float, Short, Short>>> currentEdges = workGraph.getEdges();
+            DataSet<Edge<Integer, Tuple3<Float, Integer, Integer>>> currentEdges = workGraph.getEdges();
 
             // Iterates function SelectMinWeight over all the vertices in graph.
             // Finds a shortest adjacent edge for each vertex.
             // Returns a (not necessary connected) subgraph consisting of those edges.
-            DataSet<Edge<Short, Float>> minEnges =
+            DataSet<Edge<Integer, Float>> minEnges =
                     workGraph.groupReduceOnEdges(new SelectMinWeight(), EdgeDirection.OUT);
 
             //Collect intermediate results
@@ -124,8 +124,8 @@ public class MinimumSpanningTree
             }
 
              // Find connected components of mstGraph.
-            DataSet<Vertex<Short, String>> updatedConnectedComponents =
-                    mstGraph.run(new GSAConnectedComponents<Short, String, Float>(maxIterationsGSA));
+            DataSet<Vertex<Integer, String>> updatedConnectedComponents =
+                    mstGraph.run(new GSAConnectedComponents<Integer, String, Float>(maxIterationsGSA));
 
 
              // Use Summarize to create/update SuperVertices in the ORIGINAL graph
@@ -133,17 +133,17 @@ public class MinimumSpanningTree
              // 1) delete loops
              // 2) select minWeightEdge and go back to original VV type
 
-            Graph<Short, Summarization.VertexValue<String>, Summarization.EdgeValue<Tuple3<Float, Short, Short>>> compressedGraph =
+            Graph<Integer, Summarization.VertexValue<String>, Summarization.EdgeValue<Tuple3<Float, Integer, Integer>>> compressedGraph =
                         Graph.fromDataSet(updatedConnectedComponents, currentEdges, env)
-                            .run(new Summarization<Short, String, Tuple3<Float, Short, Short>>())
-                            .filterOnEdges(new CleanEdges<Short, Summarization.EdgeValue<Tuple3<Float,Short,Short>>>());
+                            .run(new Summarization<Integer, String, Tuple3<Float, Integer, Integer>>())
+                            .filterOnEdges(new CleanEdges<Integer, Summarization.EdgeValue<Tuple3<Float,Integer,Integer>>>());
 
-            DataSet<Edge<Short, Tuple3<Float, Short, Short>>> finalEdges =
+            DataSet<Edge<Integer, Tuple3<Float, Integer, Integer>>> finalEdges =
                     compressedGraph.getEdges()
                             .groupBy(0,1)
                             .reduceGroup(new SelectMinEdge());
 
-            DataSet<Vertex<Short, String>> finalVertices = compressedGraph.mapVertices(new ExtractVertVal ()).getVertices();
+            DataSet<Vertex<Integer, String>> finalVertices = compressedGraph.mapVertices(new ExtractVertVal ()).getVertices();
 
             // Collect data for the next loop iteration or finish loop execution
             if (finalEdges.count()>0) {
@@ -156,7 +156,7 @@ public class MinimumSpanningTree
         }
 
         //Final solution
-        DataSet<Edge<Short, Float>> mstEdges=Graph.fromDataSet(mstGraph.getEdges(),env).getUndirected().getEdges().distinct();
+        DataSet<Edge<Integer, Float>> mstEdges=Graph.fromDataSet(mstGraph.getEdges(),env).getUndirected().getEdges().distinct();
 
         return Graph.fromDataSet(graph.getVertices(), mstEdges, env);
     }
@@ -172,11 +172,11 @@ public class MinimumSpanningTree
      * should be later changed to the Vertex ID type (WHEN Summarization with non-String types will be supported in Flink).
      */
 
-    private static final class InitializeVert implements MapFunction<Vertex<Short, NullValue>, String> {
+    private static final class InitializeVert implements MapFunction<Vertex<Integer, NullValue>, String> {
 
         @Override
-        public String map(Vertex<Short, NullValue> vertex) throws Exception {
-            return Short.toString(vertex.f0);
+        public String map(Vertex<Integer, NullValue> vertex) throws Exception {
+            return Integer.toString(vertex.f0);
         }
     }
 
@@ -185,10 +185,10 @@ public class MinimumSpanningTree
      */
 
     private static final class InitializeEdges
-            implements MapFunction<Edge<Short, Float>, Tuple3<Float, Short, Short>> {
+            implements MapFunction<Edge<Integer, Float>, Tuple3<Float, Integer, Integer>> {
 
         @Override
-        public Tuple3<Float, Short, Short> map(Edge<Short, Float> edge) throws Exception {
+        public Tuple3<Float, Integer, Integer> map(Edge<Integer, Float> edge) throws Exception {
             return new Tuple3(edge.f2,edge.f0,edge.f1);
         }
     }
@@ -200,14 +200,14 @@ public class MinimumSpanningTree
      */
 
     private static final class SelectMinWeight
-            implements EdgesFunction<Short,Tuple3<Float,Short,Short>,Edge<Short, Float>> {
+            implements EdgesFunction<Integer,Tuple3<Float,Integer,Integer>,Edge<Integer, Float>> {
 
-        public void iterateEdges(Iterable<Tuple2<Short, Edge<Short, Tuple3<Float,Short,Short>>>> edges,
-                                 Collector<Edge<Short, Float>> out) throws Exception
+        public void iterateEdges(Iterable<Tuple2<Integer, Edge<Integer, Tuple3<Float,Integer,Integer>>>> edges,
+                                 Collector<Edge<Integer, Float>> out) throws Exception
         {
             Float minVal = Float.MAX_VALUE;
-            Edge<Short,Float> minEdge = null;
-            for (Tuple2<Short, Edge<Short, Tuple3<Float,Short,Short>>> tuple : edges)
+            Edge<Integer,Float> minEdge = null;
+            for (Tuple2<Integer, Edge<Integer, Tuple3<Float,Integer,Integer>>> tuple : edges)
             {
                 if (tuple.f1.getValue().f0.compareTo(minVal)<0)
                 {
@@ -229,10 +229,10 @@ public class MinimumSpanningTree
      * For given vertex, extract </String> VV out of </Summarization.VertexValue<String>>>
      */
 
-    private static class ExtractVertVal implements MapFunction<Vertex<Short, Summarization.VertexValue<String>>, String> {
+    private static class ExtractVertVal implements MapFunction<Vertex<Integer, Summarization.VertexValue<String>>, String> {
 
         @Override
-        public String map(Vertex<Short, Summarization.VertexValue<String>> vertex) throws Exception {
+        public String map(Vertex<Integer, Summarization.VertexValue<String>> vertex) throws Exception {
             return vertex.f1.f0;
         }
     }
@@ -256,18 +256,18 @@ public class MinimumSpanningTree
      * This allows for graphs with not necessarily distinct edge weights.
      */
 
-    private static class SelectMinEdge implements GroupReduceFunction<Edge<Short, Summarization.EdgeValue<Tuple3<Float, Short, Short>>>,
-            Edge<Short, Tuple3<Float,Short,Short>>> {
+    private static class SelectMinEdge implements GroupReduceFunction<Edge<Integer, Summarization.EdgeValue<Tuple3<Float, Integer, Integer>>>,
+            Edge<Integer, Tuple3<Float,Integer,Integer>>> {
 
         @Override
-        public void reduce(Iterable<Edge<Short, Summarization.EdgeValue<Tuple3<Float, Short, Short>>>> edges,
-                           Collector<Edge<Short, Tuple3<Float,Short,Short>>> out) throws Exception {
+        public void reduce(Iterable<Edge<Integer, Summarization.EdgeValue<Tuple3<Float, Integer, Integer>>>> edges,
+                           Collector<Edge<Integer, Tuple3<Float,Integer,Integer>>> out) throws Exception {
 
             Float minVal = Float.MAX_VALUE;
-            Edge<Short,Summarization.EdgeValue<Tuple3<Float,Short,Short>>> minEdge = null;
-            Edge<Short,Tuple3<Float,Short,Short>> outEdge= new Edge();
+            Edge<Integer,Summarization.EdgeValue<Tuple3<Float,Integer,Integer>>> minEdge = null;
+            Edge<Integer,Tuple3<Float,Integer,Integer>> outEdge= new Edge();
 
-            for (Edge<Short, Summarization.EdgeValue<Tuple3<Float,Short,Short>>> tuple : edges)
+            for (Edge<Integer, Summarization.EdgeValue<Tuple3<Float,Integer,Integer>>> tuple : edges)
             {
                 if (tuple.getValue().f0.f0.compareTo(minVal) < 0)
                 {
