@@ -19,48 +19,49 @@
 package org.apache.flink.graph.examples;
 
 import org.apache.flink.api.common.ProgramDescription;
-import org.apache.flink.api.common.functions.FilterFunction;
-import org.apache.flink.api.common.functions.FlatJoinFunction;
 import org.apache.flink.api.common.functions.JoinFunction;
-import org.apache.flink.api.common.typeutils.base.DoubleComparator;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
-import org.apache.flink.api.java.functions.FunctionAnnotation;
-import org.apache.flink.api.java.io.LocalCollectionOutputFormat;
-import org.apache.flink.api.java.operators.DeltaIteration;
-import org.apache.flink.api.common.functions.CrossFunction;
-import org.apache.flink.api.java.tuple.Tuple4;
-import org.apache.flink.api.java.tuple.Tuple5;
-import org.apache.flink.api.java.tuple.Tuple6;
 import org.apache.flink.graph.Edge;
 import org.apache.flink.graph.Graph;
-import org.apache.flink.graph.Vertex;
-import org.apache.flink.graph.examples.data.MY_MSTDefaultData;
-import org.apache.flink.graph.library.MY_MST;
-import org.apache.flink.graph.utils.Tuple2ToVertexMap;
+import org.apache.flink.graph.examples.data.TSPDefaultData;
+import org.apache.flink.graph.library.MinimumSpanningTree;
 import org.apache.flink.graph.utils.Tuple3ToEdgeMap;
-import org.apache.flink.types.LongValue;
 import org.apache.flink.types.NullValue;
 import org.apache.flink.api.java.tuple.Tuple2;
 import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.util.Collector;
 import java.util.ArrayList;
-import java.util.LinkedList;
 import java.util.List;
 import java.util.Stack;
-import java.lang.Math;
-import org.apache.flink.graph.EdgesFunctionWithVertexValue;
-import java.io.FileWriter;
-import org.apache.flink.api.common.functions.MapFunction;
 
 /**
- * Created by Olga on 9/26/16.
- */
-
-/**
- * Christofides' algorithm for the TSP
- * 2-approximation algorithm: it returns a cycle that is at most twice as long
- * as an optimal cycle: C ≤ 2 · OPT
+ *
+ * This example shows how to use Gelly's library method.
+ * You can find all available library methods in {@link org.apache.flink.graph.library}.
+ *
+ * In particular, this example uses the {@link MinimumSpanningTree}
+ * library method to compute an approximate solution to the Metric Travelling Salesman Problem (TSP).
+ *
+ * This class implements the 2-approximation algorithm for Metric version of TSP by Kou, Markowsky, and Berman
+ * ["A fast algorithm for Steiner trees." Acta informatica 15.2 (1981): 141-145.]
+ * It always returns a cycle that is at most twice as long
+ * as an optimal cycle: C ≤ 2 · OPT.
+ *
+ * The input file is a plain text file and must be formatted as follows:
+ * Edges are represented by tuples of srcVertexId, trgVertexId and EdgeValue (Distance between srcVertexId and trgVertexId) which are
+ * separated by tabs. Edges themselves are separated by newlines. List of edges should correspond to undirected complete graph
+ * For example: <code>1\t2\t0.3\n1\t3\t1.5\n</code> defines two edges,
+ * 1-2 with weight 0.3, and 1-3 with weight 1.5.
+ *
+ * The algorithm guarantees 2-approximation only for Metric graphs,
+ * i.e., graphs where edge weights satisfy triangle inequality: w(A,B)+w(B,C) >= w(A,C).
+ * In particular, if edges represent distances between points in any Euclidean space (R^n), they do satisfy triangle inequality.
+ *
+ * Usage <code>MST &lt;edge path&gt; &lt;result path for TSP&gt; &lt;result path for MST&gt;
+ * &lt;number of vertices&gt; &lt;number of iterations&gt; </code><br>
+ *
+ * If no parameters are provided, the program is run with default data from
+ * {@link TSPDefaultData}.
  */
 
 public class My_TSPExample implements ProgramDescription{
@@ -74,67 +75,45 @@ public class My_TSPExample implements ProgramDescription{
 
         ExecutionEnvironment env = ExecutionEnvironment.getExecutionEnvironment();
 
-        //get coordinates of vertices on plane
-        //DataSet<Tuple3<Long, Double, Double>> vertCoord = getEdgeDataSet(env);
+        DataSet<Edge<Integer, Float>> edgesOrig = getEdgeDataSet(env);
 
-        //get Edges from coordinates
-        DataSet<Edge<Long, Double>> edges = getEdgeDataSet(env);
-/*                vertCoord.cross(vertCoord)
-                .with(new EuclideanDistComputer())
-                .filter(new FilterFunction<Edge<Long, Double>>() {
-                    @Override
-                    public boolean filter(Edge<Long, Double> value) throws Exception {
-                        return (value.getSource()!=value.getTarget());
-                    }
-                })
-*/                ;
+        List<Edge<Integer,Float>> MSTedges=getEdgeList(env).collect();
 
-        //Graph<Long, NullValue, Double> graph = Graph.fromDataSet(edges, env);
+        // Compute Hamiltonian cycle as a list of edges (pairs of vertices)
+        List<Tuple2<Integer,Integer>> tspList =
+                HamCycle(MSTedges, numOfPoints);
 
-        // Find MST of the given graph
-        Graph<Long, NullValue, Double> result=Graph.fromDataSet(edges, env)
-                .run(new MY_MST<Long, NullValue, Double>(maxIterations));
+        // Collect edges of Hamiltonian cycle in a DataSet
+        DataSet<Tuple2<Integer,Integer>> tspSet = env.fromCollection(tspList);
 
-        DataSet<Edge<Long, Double>> outres=result.getUndirected().getEdges().distinct();
-
-        Graph<Long, NullValue, Double> cyclic=Graph.fromDataSet(outres,env);
-
-        //Create a Hamiltonian cycle: Tuple2 < Vertex out, Vertex in >
-        List<Tuple2<Long,Long>> tspList =
-                HamCycle(cyclic.getEdges().collect(), numOfPoints);
-
-        //Collect edges - approximate TSP
-        DataSet<Tuple2<Long,Long>> tspSet = env.fromCollection(tspList);
-
-        DataSet<Tuple3<Long,Long,Double>> mytspPath = tspSet
-                .join(edges)
+        // Get edge weights from the original graph
+        DataSet<Tuple3<Integer,Integer,Float>> tspCycle = tspSet
+                .join(edgesOrig)
                 .where(0,1)
                 .equalTo(0,1)
-                .with(new JoinFunction<Tuple2<Long, Long>, Edge<Long, Double>, Tuple3<Long, Long, Double>>() {
+                .with(new JoinFunction<Tuple2<Integer, Integer>, Edge<Integer, Float>, Tuple3<Integer, Integer, Float>>() {
                     @Override
-                    public Tuple3<Long, Long, Double> join(Tuple2<Long, Long> first, Edge<Long, Double> second)
+                    public Tuple3<Integer, Integer, Float> join(Tuple2<Integer, Integer> first, Edge<Integer, Float> second)
                             throws Exception {
-                        return new Tuple3<Long, Long, Double>(first.f0,first.f1, second.getValue());
+                        return new Tuple3<>(first.f0,first.f1, second.getValue());
                     }
                 });
 
-        // emit result
+        // Output TSP
         if(fileOutput) {
-            mytspPath.writeAsCsv(outputPath, "\n", ",");
-            //cyclic.getEdges().writeAsCsv(outputPath, "\n", ",");
-            // result.getEdges().print();
+            tspCycle.writeAsCsv(outputPath, "\n", ",");
             env.execute("Metric TSP solution");
         } else {
-            System.out.println("TSPpath:");
-            mytspPath.print();
-            // cyclic.getEdges().print();
+            System.out.println("TSP cycle:");
+            tspCycle.print();
+            System.out.println("Correct answer:\n" + TSPDefaultData.RESULTED_TSP);
         }
 
     }
 
     @Override
     public String getDescription() {
-        return "Minimum Spanning Tree Example";
+        return "Travelling Salesman Problem Example";
     }
 
     // *************************************************************************
@@ -147,112 +126,100 @@ public class My_TSPExample implements ProgramDescription{
 
     private static String outputPath = null;
 
-    private static Integer maxIterations = MY_MSTDefaultData.MAX_ITERATIONS;
+    private static String MSTedgeInputPath = null;
+
+    //private static Integer maxIterations = TSPDefaultData.MAX_ITERATIONS;
 
     private static Integer numOfPoints = 9;
 
     private static boolean parseParameters(String[] args) {
 
         if (args.length > 0) {
-            if(args.length != 4) {
-                System.err.println("Usage: <input edges path> <output path> <num of points> <num iterations>");
+            if(args.length != 5) {
+                System.err.println("Usage: <input edges path> <output path TSP> <output path MST> " +
+                        "<num vertices> <num iterations>");
                 return false;
             }
 
             fileOutput = true;
             edgeInputPath = args[0];
-            outputPath = args[1];
-            maxIterations = Integer.parseInt(args[3]);
-            numOfPoints=Integer.parseInt(args[2]);
+            MSTedgeInputPath = args[1];
+            outputPath=args[2];
+            //maxIterations = Integer.parseInt(args[4]);
+            numOfPoints=Integer.parseInt(args[3]);
         } else {
             System.out.println("Executing Example with default parameters and built-in default data.");
             System.out.println("  Provide parameters to read input data from files.");
             System.out.println("  See the documentation for the correct format of input files.");
-            System.out.println("Usage: <input edges path> <output path> <num of points> " +
-                    " <num iterations>");
+            System.out.println("Usage: <input edges path> <output path TSP> <output path MST> " +
+                    "<num vertices> <num iterations>");
         }
         return true;
     }
 
-    /*private static DataSet<Tuple3<Long, Double, Double>> getEdgeDataSet(ExecutionEnvironment env) {
-        if (fileOutput) {
-            return env.readCsvFile(edgeInputPath)
-                    .fieldDelimiter(" ")
-                    .lineDelimiter("\n")
-                    .types(Long.class, Double.class, Double.class);
-        } else {
-            Object[][] DEFAULT_POINTS = new Object[][] {
-                    new Object[]{1L, 1.0, 1.0},
-                    new Object[]{2L, 3.0, 6.0},
-                    new Object[]{3L, 5.0, 5.0},
-                    new Object[]{4L, 5.0, 1.0},
-                    new Object[]{5L, 6.0, 4.0},
-                    new Object[]{7L, 8.0, 1.0},
-                    new Object[]{8L, 7.0, 1.0},
-                    new Object[]{9L, 3.0, 1.0}
-            };
-            List<Tuple3<Long, Double, Double>> edgeList = new LinkedList<Tuple3<Long, Double, Double>>();
-            for (Object[] edge : DEFAULT_POINTS) {
-                edgeList.add(new Tuple3<Long, Double, Double>((Long) edge[0], (Double) edge[1], (Double) edge[2]));
-            }
-            return env.fromCollection(edgeList);
-        }
-    }*/
-
-    private static DataSet<Edge<Long, Double>> getEdgeDataSet(ExecutionEnvironment env) {
+    private static DataSet<Edge<Integer, Float>> getEdgeDataSet(ExecutionEnvironment env) {
         if (fileOutput) {
             return env.readCsvFile(edgeInputPath)
                     .fieldDelimiter("\t")
                     .lineDelimiter("\n")
-                    .types(Long.class, Long.class, Double.class)
-                    .map(new Tuple3ToEdgeMap<Long, Double>());
+                    .types(Integer.class, Integer.class, Float.class)
+                    .map(new Tuple3ToEdgeMap<Integer, Float>());
         } else {
-            return MY_MSTDefaultData.getDefaultEdgeDataSet(env);
+            return TSPDefaultData.getDefaultEdgeDataSet(env);
         }
     }
 
-    // CrossFunction computes the Euclidean distance between two Coord objects.
-    private static class EuclideanDistComputer
-            implements CrossFunction<Tuple3<Long, Double, Double>, Tuple3<Long, Double, Double>,
-            Edge<Long, Double>> {
-
-        @Override
-        public Edge<Long, Double> cross(Tuple3<Long, Double, Double> c1, Tuple3<Long, Double, Double> c2) {
-            // compute Euclidean distance of coordinates
-            Double dist = Math.sqrt(Math.pow(c1.f1 - c2.f1, 2) + Math.pow(c1.f2 - c2.f2, 2));
-            return new Edge<Long, Double>(c1.f0, c2.f0, dist);
+    private static DataSet<Edge<Integer, Float>> getEdgeList(ExecutionEnvironment env) {
+        if (fileOutput) {
+            return env.readCsvFile(edgeInputPath)
+                    .fieldDelimiter("\t")
+                    .lineDelimiter("\n")
+                    .types(Integer.class, Integer.class, Float.class)
+                    .map(new Tuple3ToEdgeMap<Integer, Float>());
+        } else {
+            return TSPDefaultData.getDefaultEdgeDataSet(env);
         }
     }
-
-    /*
-     * Walk through all vertices exactly once using MST
-     * Create list of pairs Source-Target
-     * DFS-based method
+    /**
+     * This method computes a Hamiltonian cycle from a Minimum Spanning Tree.
+     * For Metric graphs (w(A,B)+w(B,C) >= w(A,C)) the resulting Hamiltonian cycle is within a factor of two of the optimal one.
+     * @param edges Edges of a Minimum Spanning Tree
+     * @param n Number of vertices
+     * @return list of pairs of vertices - edges of a Hamiltonian cycle computed from the provided Minimum Spanning Tree
      */
-    private static List<Tuple2<Long,Long>> HamCycle (List<Edge<Long,Double>> edges, int n)
+    private static List<Tuple2<Integer,Integer>> HamCycle (List<Edge<Integer,Float>> edges, int n)
     {
-        List<List<Long>> adj = new ArrayList<List<Long>>(n+1);
+        // Compose adjacency lists of the graph.
+        List<List<Integer>> adj = new ArrayList<>(n+1);
         for (int i=0; i<=n; i++)
-            adj.add(new ArrayList<Long>());
-        for(Edge<Long,Double> edge : edges)
+            adj.add(new ArrayList<Integer>());
+        for(Edge<Integer,Float> edge : edges)
             adj.get(edge.f0.intValue()).add(edge.f1);
 
-        List<Tuple2<Long,Long>> result = new ArrayList<>();
-        Long root = new Long(1);  //arbitrary vertex
-        Long prev = root;
-        Stack<Long> dfs = new Stack<Long>();
-        dfs.push(root);
+        // List of edges of Hamiltonian Path
+        List<Tuple2<Integer,Integer>> result = new ArrayList<>();
+
+        // Arbitrary vertex is selected to be the root
+        Integer root = 1;
+        Integer prev = root;
+
+        // marked[i]=true iff the vertex i has been visited.
         boolean[] marked = new boolean[n+1];
         marked[root.intValue()]=true;
+
+        // Depth-First Search
+        Stack<Integer> dfs = new Stack<>();
+        dfs.push(root);
+
         while (!dfs.empty())
         {
-            Long curVert = dfs.peek();
+            Integer curVert = dfs.peek();
             dfs.pop();
-            if (curVert != root) {
-                result.add(new Tuple2<Long, Long>(prev, curVert));
+            if (!curVert.equals(root)) {
+                result.add(new Tuple2<>(prev, curVert));
             }
 
-            for (Long neighbor: adj.get(curVert.intValue()))
+            for (Integer neighbor: adj.get(curVert.intValue()))
             {
                 if (!marked[neighbor.intValue()])
                 {
@@ -262,7 +229,7 @@ public class My_TSPExample implements ProgramDescription{
             }
             prev = curVert;
         }
-        result.add(new Tuple2<Long, Long>(prev, root));
+        result.add(new Tuple2<>(prev, root));
         return result;
     }
 
