@@ -135,7 +135,7 @@ public class My_TSPExample implements ProgramDescription{
     private static boolean parseParameters(String[] args) {
 
         if (args.length > 0) {
-            if(args.length != 5) {
+            if(args.length != 4) {
                 System.err.println("Usage: <input edges path> <output path TSP> <output path MST> " +
                         "<num vertices> <num iterations>");
                 return false;
@@ -171,8 +171,8 @@ public class My_TSPExample implements ProgramDescription{
 
     private static DataSet<Edge<Integer, Float>> getEdgeList(ExecutionEnvironment env) {
         if (fileOutput) {
-            return env.readCsvFile(edgeInputPath)
-                    .fieldDelimiter("\t")
+            return env.readCsvFile(MSTedgeInputPath)
+                    .fieldDelimiter(",")
                     .lineDelimiter("\n")
                     .types(Integer.class, Integer.class, Float.class)
                     .map(new Tuple3ToEdgeMap<Integer, Float>());
